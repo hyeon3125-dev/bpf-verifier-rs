@@ -1,0 +1,8 @@
+[package]
+name = "bpf_verifier_rs"
+version = "0.1.0"
+edition = "2024"
+description = "Rust model of the bpf-next verifier scalar abstract domain (tnum x cnum), with Kani soundness proofs and a differential test against the unmodified kernel C. Tracks bpf-next a975094bf (7.2-rc1)."
+license = "GPL-2.0-only"
+
+[dependencies]
