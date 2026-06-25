@@ -28,6 +28,7 @@ HARNESSES=(
 	cnum32_union_sound cnum32_union_upper_bound cnum32_widen_upper_bound
 	scalar_join_sound state_join_sound state_regsafe_sound
 	scalar_add_sound scalar_sub_sound
+	scalar_and_sound scalar_or_sound scalar_xor_sound
 )
 for h in "${HARNESSES[@]}"; do
 	printf '  %-32s ' "$h"

@@ -31,6 +31,35 @@ pub fn scalar_sub(a: Scalar, b: Scalar) -> Scalar {
     }
 }
 
+/// Bitwise ops: the tnum carries the precise result; ranges are left ⊤ and
+/// recovered by reg_bounds_sync from the tnum (as the kernel does after
+/// scalar_min_max_and/or/xor). Soundness holds because the tnum is sound and
+/// the reduction only tightens.
+fn bitwise(var_off: crate::tnum::Tnum) -> Scalar {
+    let mut s = Scalar {
+        var_off,
+        r64: crate::cnum::Cnum64::UNBOUNDED,
+        r32: crate::cnum::Cnum32::UNBOUNDED,
+    };
+    s.reg_bounds_sync();
+    s
+}
+
+/// BPF_AND
+pub fn scalar_and(a: Scalar, b: Scalar) -> Scalar {
+    bitwise(a.var_off.and(b.var_off))
+}
+
+/// BPF_OR
+pub fn scalar_or(a: Scalar, b: Scalar) -> Scalar {
+    bitwise(a.var_off.or(b.var_off))
+}
+
+/// BPF_XOR
+pub fn scalar_xor(a: Scalar, b: Scalar) -> Scalar {
+    bitwise(a.var_off.xor(b.var_off))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

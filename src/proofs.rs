@@ -14,7 +14,7 @@
 use crate::cnum::{Cnum32, Cnum64};
 use crate::reduction::Scalar;
 use crate::state::{regsafe_scalar, scalar_contains, scalar_join, State, NREG};
-use crate::transfer::{scalar_add, scalar_sub};
+use crate::transfer::{scalar_add, scalar_and, scalar_or, scalar_sub, scalar_xor};
 use crate::tnum::Tnum;
 
 /// A symbolic, well-formed tnum (invariant: value & mask == 0).
@@ -297,4 +297,38 @@ fn scalar_sub_sound() {
     kani::assume(scalar_contains(&a, x));
     kani::assume(scalar_contains(&b, y));
     assert!(scalar_contains(&scalar_sub(a, b), x.wrapping_sub(y)));
+}
+
+/// BPF_AND/OR/XOR transfers are sound (tnum precise + reduction-recovered range).
+#[kani::proof]
+fn scalar_and_sound() {
+    let a = any_scalar();
+    let b = any_scalar();
+    let x: u64 = kani::any();
+    let y: u64 = kani::any();
+    kani::assume(scalar_contains(&a, x));
+    kani::assume(scalar_contains(&b, y));
+    assert!(scalar_contains(&scalar_and(a, b), x & y));
+}
+
+#[kani::proof]
+fn scalar_or_sound() {
+    let a = any_scalar();
+    let b = any_scalar();
+    let x: u64 = kani::any();
+    let y: u64 = kani::any();
+    kani::assume(scalar_contains(&a, x));
+    kani::assume(scalar_contains(&b, y));
+    assert!(scalar_contains(&scalar_or(a, b), x | y));
+}
+
+#[kani::proof]
+fn scalar_xor_sound() {
+    let a = any_scalar();
+    let b = any_scalar();
+    let x: u64 = kani::any();
+    let y: u64 = kani::any();
+    kani::assume(scalar_contains(&a, x));
+    kani::assume(scalar_contains(&b, y));
+    assert!(scalar_contains(&scalar_xor(a, b), x ^ y));
 }
