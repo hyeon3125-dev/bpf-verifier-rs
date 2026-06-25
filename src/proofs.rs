@@ -14,6 +14,7 @@
 use crate::cnum::{Cnum32, Cnum64};
 use crate::reduction::Scalar;
 use crate::state::{regsafe_scalar, scalar_contains, scalar_join, State, NREG};
+use crate::transfer::{scalar_add, scalar_sub};
 use crate::tnum::Tnum;
 
 /// A symbolic, well-formed tnum (invariant: value & mask == 0).
@@ -270,4 +271,30 @@ fn state_regsafe_sound() {
     kani::assume(State::regsafe(&old, &cur)); // cur ⊑ old
     kani::assume(cur.contains(vals)); // vals ∈ γ(cur)
     assert!(old.contains(vals)); // ⇒ vals ∈ γ(old)
+}
+
+// ---- instruction transfer functions (the "transfer" half) ----
+
+/// BPF_ADD transfer is sound: x∈γ(a), y∈γ(b) ⇒ x+y ∈ γ(scalar_add(a,b)).
+#[kani::proof]
+fn scalar_add_sound() {
+    let a = any_scalar();
+    let b = any_scalar();
+    let x: u64 = kani::any();
+    let y: u64 = kani::any();
+    kani::assume(scalar_contains(&a, x));
+    kani::assume(scalar_contains(&b, y));
+    assert!(scalar_contains(&scalar_add(a, b), x.wrapping_add(y)));
+}
+
+/// BPF_SUB transfer is sound: x∈γ(a), y∈γ(b) ⇒ x−y ∈ γ(scalar_sub(a,b)).
+#[kani::proof]
+fn scalar_sub_sound() {
+    let a = any_scalar();
+    let b = any_scalar();
+    let x: u64 = kani::any();
+    let y: u64 = kani::any();
+    kani::assume(scalar_contains(&a, x));
+    kani::assume(scalar_contains(&b, y));
+    assert!(scalar_contains(&scalar_sub(a, b), x.wrapping_sub(y)));
 }
