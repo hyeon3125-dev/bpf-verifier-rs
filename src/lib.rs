@@ -8,4 +8,5 @@ pub mod cnum;
 #[cfg(kani)]
 pub mod proofs;
 pub mod reduction;
+pub mod state;
 pub mod tnum;

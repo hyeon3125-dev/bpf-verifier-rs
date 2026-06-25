@@ -24,6 +24,8 @@ HARNESSES=(
 	tnum_contains_sound
 	cnum32_subset_reflexive cnum32_subset_sound cnum64_cnum32_intersect_sound
 	deduce_one_pass_is_fixpoint
+	regsafe_scalar_sound
+	cnum32_union_sound cnum32_union_upper_bound cnum32_widen_upper_bound
 )
 for h in "${HARNESSES[@]}"; do
 	printf '  %-32s ' "$h"

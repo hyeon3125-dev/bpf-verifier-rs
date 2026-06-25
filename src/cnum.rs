@@ -173,6 +173,67 @@ macro_rules! define_cnum {
             pub fn intersect_with(&mut self, src: $name) {
                 *self = Self::intersect(*self, src);
             }
+
+            /// Join (⊔): the smallest-ish arc covering γ(a) ∪ γ(b).
+            /// Over-approximation (the exact union of two disjoint arcs is not an
+            /// arc). Soundness is the contract; precision is best-effort.
+            /// Design: docs/JOIN_DESIGN.md §1.
+            pub fn union(a: $name, b: $name) -> $name {
+                // case 1: bottom is the identity
+                if a.is_empty() {
+                    return b;
+                }
+                if b.is_empty() {
+                    return a;
+                }
+                // case 2: containment (is_subset(big, small) = small ⊆ big)
+                if Self::is_subset(a, b) {
+                    return a; // b ⊆ a
+                }
+                if Self::is_subset(b, a) {
+                    return b; // a ⊆ b
+                }
+                // case 3·4: build a candidate arc from each base reaching the
+                // farthest endpoint clockwise, then VERIFY it actually covers
+                // both via the (proven-sound) is_subset. A candidate that fails
+                // (e.g. the other operand is an overflow arc the max-distance
+                // misses) is discarded; if neither covers, fall back to ⊤.
+                // This keeps soundness exact at the cost of precision on the
+                // genuinely-two-arc cases. (docs/JOIN_DESIGN.md §1)
+                let a_end = a.base.wrapping_add(a.size);
+                let b_end = b.base.wrapping_add(b.size);
+                let s1 = a
+                    .size
+                    .max(b.base.wrapping_sub(a.base))
+                    .max(b_end.wrapping_sub(a.base));
+                let s2 = b
+                    .size
+                    .max(a.base.wrapping_sub(b.base))
+                    .max(a_end.wrapping_sub(b.base));
+                let c1 = $name { base: a.base, size: s1 };
+                let c2 = $name { base: b.base, size: s2 };
+                let c1_ok = Self::is_subset(c1, a) && Self::is_subset(c1, b);
+                let c2_ok = Self::is_subset(c2, a) && Self::is_subset(c2, b);
+                match (c1_ok, c2_ok) {
+                    (true, true) => if s1 <= s2 { c1 } else { c2 },
+                    (true, false) => c1,
+                    (false, true) => c2,
+                    (false, false) => $name { base: 0, size: <$ut>::MAX }, // ⊤
+                }
+            }
+
+            /// Widening (▽) for termination. Simple version: if the new value
+            /// `b` is already inside `a` the iteration is stable → keep `a`;
+            /// otherwise jump straight to ⊤. Any ascending chain x_{n+1}=x_n▽y
+            /// stabilizes in ≤2 steps (⊤ is absorbing). Upper bound: a,b ⊑ a▽b.
+            /// (docs/JOIN_DESIGN.md §2 — precise variant is future work.)
+            pub fn widen(a: $name, b: $name) -> $name {
+                if Self::is_subset(a, b) {
+                    a // b ⊆ a, stable
+                } else {
+                    $name { base: 0, size: <$ut>::MAX } // ⊤
+                }
+            }
         }
     };
 }
@@ -289,5 +350,63 @@ mod tests {
         let r = Cnum32::intersect(a, b);
         assert!(r.contains(50) && r.contains(100));
         assert!(!r.contains(150));
+    }
+
+    #[test]
+    fn union_disjoint_covers_both() {
+        let a = Cnum32::from_urange(0, 10);
+        let b = Cnum32::from_urange(20, 30);
+        let u = Cnum32::union(a, b);
+        for v in [0u32, 5, 10, 20, 25, 30] {
+            assert!(u.contains(v), "union must contain {v}: {u:?}");
+        }
+    }
+
+    #[test]
+    fn union_overlap_covers_both() {
+        let a = Cnum32::from_urange(0, 50);
+        let b = Cnum32::from_urange(40, 100);
+        let u = Cnum32::union(a, b);
+        for v in [0u32, 25, 45, 75, 100] {
+            assert!(u.contains(v), "union must contain {v}: {u:?}");
+        }
+    }
+
+    #[test]
+    fn union_identity_and_idempotent() {
+        let a = Cnum32::from_urange(5, 9);
+        assert_eq!(Cnum32::union(a, a), a);
+        assert_eq!(Cnum32::union(a, Cnum32::EMPTY), a);
+        assert_eq!(Cnum32::union(Cnum32::EMPTY, a), a);
+    }
+
+    #[test]
+    fn union_containment_returns_bigger() {
+        let big = Cnum32::from_urange(0, 100);
+        let small = Cnum32::from_urange(20, 30);
+        assert_eq!(Cnum32::union(big, small), big);
+        assert_eq!(Cnum32::union(small, big), big);
+    }
+
+    #[test]
+    #[ignore] // diagnostic: find first soundness counterexample in a small space
+    fn union_bruteforce_counterexample() {
+        let n = 12u32;
+        for ab in 0..n {
+            for asz in 0..n {
+                for bb in 0..n {
+                    for bsz in 0..n {
+                        let a = Cnum32 { base: ab, size: asz };
+                        let b = Cnum32 { base: bb, size: bsz };
+                        let u = Cnum32::union(a, b);
+                        for v in 0..(2 * n) {
+                            if (a.contains(v) || b.contains(v)) && !u.contains(v) {
+                                panic!("CEX a={a:?} b={b:?} v={v} -> u={u:?}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

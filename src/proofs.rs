@@ -13,6 +13,7 @@
 
 use crate::cnum::{Cnum32, Cnum64};
 use crate::reduction::Scalar;
+use crate::state::{regsafe_scalar, scalar_contains};
 use crate::tnum::Tnum;
 
 /// A symbolic, well-formed tnum (invariant: value & mask == 0).
@@ -170,4 +171,54 @@ fn deduce_one_pass_is_fixpoint() {
     s2.reg_deduce_bounds();
     s2.reg_deduce_bounds(); // 2 passes
     assert!(s1 == s2, "second deduce pass changed the state");
+}
+
+// ---- state equivalence: pruning is sound (Phase 2 / Layer-1 ordering) ----
+
+/// `regsafe(old, cur)` (SCALAR case) is sound: if old is deemed safe-to-prune
+/// cur, then every concrete value cur can hold is already covered by old —
+/// γ(cur) ⊆ γ(old). This is what licenses is_state_visited() pruning, and the
+/// partial order the (future) join operator must respect.
+#[kani::proof]
+fn regsafe_scalar_sound() {
+    let old = any_scalar();
+    let cur = any_scalar();
+    let v: u64 = kani::any();
+    kani::assume(scalar_contains(&cur, v)); // v ∈ γ(cur)
+    kani::assume(regsafe_scalar(&old, &cur)); // cur ⊑ old
+    assert!(scalar_contains(&old, v)); // ⇒ v ∈ γ(old)
+}
+
+// ---- A: cnum join(union) soundness (Phase 2 / Layer-1 join operator) ----
+
+/// `union(a,b)` is a sound join: every member of either operand is in the
+/// result. γ(a) ∪ γ(b) ⊆ γ(union(a,b)). (docs/JOIN_DESIGN.md §1.4)
+#[kani::proof]
+fn cnum32_union_sound() {
+    let a = Cnum32 { base: kani::any(), size: kani::any() };
+    let b = Cnum32 { base: kani::any(), size: kani::any() };
+    let v: u32 = kani::any();
+    kani::assume(a.contains(v) || b.contains(v));
+    assert!(Cnum32::union(a, b).contains(v));
+}
+
+/// `union(a,b)` is an upper bound: a ⊑ union and b ⊑ union.
+#[kani::proof]
+fn cnum32_union_upper_bound() {
+    let a = Cnum32 { base: kani::any(), size: kani::any() };
+    let b = Cnum32 { base: kani::any(), size: kani::any() };
+    let u = Cnum32::union(a, b);
+    assert!(Cnum32::is_subset(u, a)); // a ⊆ u
+    assert!(Cnum32::is_subset(u, b)); // b ⊆ u
+}
+
+/// `widen(a,b)` is an upper bound (soundness of the widening operator):
+/// a ⊑ a▽b and b ⊑ a▽b. (Termination is structural — see JOIN_DESIGN §2.)
+#[kani::proof]
+fn cnum32_widen_upper_bound() {
+    let a = Cnum32 { base: kani::any(), size: kani::any() };
+    let b = Cnum32 { base: kani::any(), size: kani::any() };
+    let w = Cnum32::widen(a, b);
+    assert!(Cnum32::is_subset(w, a)); // a ⊆ a▽b
+    assert!(Cnum32::is_subset(w, b)); // b ⊆ a▽b
 }
