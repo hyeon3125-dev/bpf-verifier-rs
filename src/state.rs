@@ -30,6 +30,69 @@ pub fn regsafe_scalar(old: &Scalar, cur: &Scalar) -> bool {
         && old.var_off.contains(cur.var_off)   // cur.var_off ⊆ old.var_off
 }
 
+/// Reg-level join: the (reduced-product) join of two scalar states, taken
+/// component-wise — tnum ⊔ tnum, cnum64 ⊔ cnum64, cnum32 ⊔ cnum32. This is the
+/// per-register core of `merge_verifier_state`'s join. Over-approximates (no
+/// post-join reduction); soundness is what matters here.
+pub fn scalar_join(a: Scalar, b: Scalar) -> Scalar {
+    Scalar {
+        var_off: a.var_off.union(b.var_off),
+        r64: Cnum64::union(a.r64, b.r64),
+        r32: Cnum32::union(a.r32, b.r32),
+    }
+}
+
+/// A (simplified) verifier state: a register file of scalar states. Real BPF
+/// states carry pointer types, ids, stack slots and liveness; we model the
+/// SCALAR register vector, since the join is element-wise and so independent of
+/// the register count (NREG kept small for tractable proofs).
+pub const NREG: usize = 2;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct State {
+    pub regs: [Scalar; NREG],
+}
+
+impl State {
+    /// `merge_verifier_state` (modeled): element-wise scalar_join.
+    pub fn join(a: State, b: State) -> State {
+        let mut regs = a.regs;
+        let mut i = 0;
+        while i < NREG {
+            regs[i] = scalar_join(a.regs[i], b.regs[i]);
+            i += 1;
+        }
+        State { regs }
+    }
+
+    /// γ membership: a concrete register assignment is in the state iff each
+    /// register value is in its scalar state's concretization.
+    pub fn contains(&self, vals: [u64; NREG]) -> bool {
+        let mut i = 0;
+        while i < NREG {
+            if !scalar_contains(&self.regs[i], vals[i]) {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+
+    /// `states_equal` (modeled): state-level pruning ordering — cur ⊑ old iff
+    /// every register is regsafe. The ordering whose ⊔ is `join` above; this is
+    /// what licenses pruning `cur` against an already-explored `old`.
+    pub fn regsafe(old: &State, cur: &State) -> bool {
+        let mut i = 0;
+        while i < NREG {
+            if !regsafe_scalar(&old.regs[i], &cur.regs[i]) {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

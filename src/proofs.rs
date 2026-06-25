@@ -13,7 +13,7 @@
 
 use crate::cnum::{Cnum32, Cnum64};
 use crate::reduction::Scalar;
-use crate::state::{regsafe_scalar, scalar_contains};
+use crate::state::{regsafe_scalar, scalar_contains, scalar_join, State, NREG};
 use crate::tnum::Tnum;
 
 /// A symbolic, well-formed tnum (invariant: value & mask == 0).
@@ -221,4 +221,53 @@ fn cnum32_widen_upper_bound() {
     let w = Cnum32::widen(a, b);
     assert!(Cnum32::is_subset(w, a)); // a ⊆ a▽b
     assert!(Cnum32::is_subset(w, b)); // b ⊆ a▽b
+}
+
+// ---- state-level join (merge_verifier_state model) ----
+
+/// Reg-level join is sound across all three sub-domains at once:
+/// v ∈ γ(a) ∨ v ∈ γ(b) ⇒ v ∈ γ(scalar_join(a,b)). (Also exercises tnum_union
+/// soundness inside the reduced product.)
+#[kani::proof]
+fn scalar_join_sound() {
+    let a = any_scalar();
+    let b = any_scalar();
+    let v: u64 = kani::any();
+    kani::assume(scalar_contains(&a, v) || scalar_contains(&b, v));
+    assert!(scalar_contains(&scalar_join(a, b), v));
+}
+
+/// State-level join (modeled merge_verifier_state) is sound: a concrete
+/// register assignment in either input state is covered by the join. Lifts
+/// reg-level soundness element-wise over the register file.
+#[kani::proof]
+fn state_join_sound() {
+    let a = State { regs: [any_scalar(), any_scalar()] };
+    let b = State { regs: [any_scalar(), any_scalar()] };
+    let mut vals = [0u64; NREG];
+    let mut i = 0;
+    while i < NREG {
+        vals[i] = kani::any();
+        i += 1;
+    }
+    kani::assume(a.contains(vals) || b.contains(vals));
+    assert!(State::join(a, b).contains(vals));
+}
+
+/// State-level pruning (modeled states_equal) is sound: if cur ⊑ old then every
+/// concrete assignment cur can hold is already covered by old. Lifts regsafe
+/// element-wise — this is what makes is_state_visited pruning safe at state level.
+#[kani::proof]
+fn state_regsafe_sound() {
+    let old = State { regs: [any_scalar(), any_scalar()] };
+    let cur = State { regs: [any_scalar(), any_scalar()] };
+    let mut vals = [0u64; NREG];
+    let mut i = 0;
+    while i < NREG {
+        vals[i] = kani::any();
+        i += 1;
+    }
+    kani::assume(State::regsafe(&old, &cur)); // cur ⊑ old
+    kani::assume(cur.contains(vals)); // vals ∈ γ(cur)
+    assert!(old.contains(vals)); // ⇒ vals ∈ γ(old)
 }
